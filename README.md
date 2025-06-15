@@ -1,11 +1,11 @@
 # 🎵 Sporganized
 
 <a href="https://github.com/V2i/Sporganized/actions/workflows/pylint.yml" target="_blank"><img src="https://github.com/V2i/Sporganized/actions/workflows/pylint.yml/badge.svg" alt="Code Quality" /></a>
-<a href="https://github.com/V2i/Sporganized/blob/main/LICENSE.txt" target="_blank"><img src="https://img.shields.io/badge/Licence-Apache_2.0-blue.svg" alt="Licence" /></a>
+<a href="https://github.com/V2i/Sporganized/blob/main/LICENSE" target="_blank"><img src="https://img.shields.io/badge/Licence-Apache_2.0-blue.svg" alt="Licence" /></a>
 
 <a href="https://www.python.org/doc" target="_blank"><img src="https://img.shields.io/badge/Python-3.13-ffd343?logo=python" alt="Python" /></a>
-<a href="https://pypi.org/project/python-dotenv" target="_blank"><img src="https://img.shields.io/badge/dotenv-1.0.1-ffd343?logo=pypi" alt="dotenv" /></a>
-<a href="https://pypi.org/project/spotipy" target="_blank"><img src="https://img.shields.io/badge/Spotipy-2.23.0-ffd343?logo=pypi" alt="Spotipy" /></a>
+<a href="https://pypi.org/project/python-dotenv" target="_blank"><img src="https://img.shields.io/badge/python--dotenv-1.1.0-ffd343?logo=pypi" alt="python-dotenv v1.1.0" /></a>
+<a href="https://pypi.org/project/spotipy" target="_blank"><img src="https://img.shields.io/badge/spotipy-2.25.1-ffd343?logo=pypi" alt="spotipy v2.25.1" /></a>
 
 **Sporganized** is a small Python application to automatically organize your liked Spotify tracks by **genre** (and optionally by mood, danceability, etc.).  
 It uses the [Spotify Web API](https://developer.spotify.com/documentation/web-api/) and Spotipy to fetch your saved tracks, analyze them, and create curated playlists grouped by genre.
