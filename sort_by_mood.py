@@ -1,182 +1,160 @@
-"""Sort Spotify liked tracks into mood/energy playlists (patched for batch size)."""
-
-from __future__ import annotations
+"""Sort Spotify liked tracks into mood playlists using AcousticBrainz API + musicbrainzngs."""
 
 import os
-import time
 from collections import defaultdict
-from typing import Dict, List
+from typing import Dict, List, Optional
 
+import musicbrainzngs
+import numpy as np
+import requests
 from dotenv import load_dotenv
-import spotipy
-from spotipy.exceptions import SpotifyException
+from sklearn.cluster import KMeans
+from sklearn.preprocessing import StandardScaler
+from spotipy import Spotify
 from spotipy.oauth2 import SpotifyOAuth
 
-# ── Constants ────────────────────────────────────────────────────────────────
-SCOPE = (
-    "user-library-read playlist-modify-public playlist-modify-private "
-    "ugc-image-upload"
-)
+# ── Constants ─────────────────────────────────────────────────────────────
+SCOPE = "user-library-read playlist-modify-public playlist-modify-private"
+RATE_DELAY = 0.3
+N_CLUSTERS = 5
 PLAYLIST_PREFIX = "Mood"
-DESCRIPTION_TAG = "[AUTO]"
-RATE_DELAY = 0.2
-BATCH_SIZE_AUDIO = 90  # <= 100 per Spotify docs; keep a safety margin
+DESCRIPTION_TAG = "[AUTO-AB]"
+MOOD_LABELS = ("Chill", "Feel‑Good", "Dance", "Workout", "Mellow")
+ACOUSTIC_API_BASE = "https://acousticbrainz.org/api/v1"
 
-# Thresholds for mood buckets
-ENERGY_HIGH = 0.7
-ENERGY_LOW = 0.4
-DANCE_HIGH = 0.7
-DANCE_LOW = 0.6
-VALENCE_HIGH = 0.7
-TEMPO_WORKOUT = 120.0
-ACOUSTIC_HIGH = 0.6
-MOOD_BUCKETS = ("Chill", "Feel‑Good", "Dance", "Workout", "Mellow", "Misc & Other")
+# ── Init MusicBrainz client ───────────────────────────────────────────────
+musicbrainzngs.set_useragent("SporganizedMoodSorter", "1.0", None)
+musicbrainzngs.set_rate_limit(limit_or_interval=False, new_requests=1)
 
-
-# ── Auth helpers ─────────────────────────────────────────────────────────────
-def authenticate_spotify() -> spotipy.Spotify:
-    """Return an authenticated Spotipy client."""
+# ── Spotify auth & data fetch ─────────────────────────────────────────────
+def authenticate_spotify() -> Spotify:
     load_dotenv()
-    auth_manager = SpotifyOAuth(
+    return Spotify(auth_manager=SpotifyOAuth(
         client_id=os.getenv("SPOTIPY_CLIENT_ID"),
         client_secret=os.getenv("SPOTIPY_CLIENT_SECRET"),
         redirect_uri=os.getenv("SPOTIPY_REDIRECT_URI"),
-        scope=SCOPE,
-    )
-    return spotipy.Spotify(auth_manager=auth_manager)
+        scope=SCOPE
+    ))
 
-
-# ── Data fetch helpers ───────────────────────────────────────────────────────
-def fetch_liked_track_ids(sp_client: spotipy.Spotify) -> List[str]:
-    """Return all liked‑track IDs for the current user."""
-    track_ids: List[str] = []
-    results = sp_client.current_user_saved_tracks(limit=50)
+def fetch_spotify_likes(sp: Spotify) -> List[dict]:
+    tracks, results = [], sp.current_user_saved_tracks(limit=50)
     while results:
-        track_ids.extend(item["track"]["id"] for item in results["items"])
-        results = sp_client.next(results) if results["next"] else None
-    return track_ids
+        for item in results['items']:
+            t = item['track']
+            isrc = t['external_ids'].get('isrc')
+            if isrc:
+                tracks.append({'id': t['id'], 'name': t['name'], 'isrc': isrc})
+        results = sp.next(results) if results['next'] else None
+    return tracks
 
+# ── MusicBrainz lookup (via musicbrainzngs) ───────────────────────────────
+def mbid_for_isrc(isrc: str) -> Optional[str]:
+    try:
+        result: Dict = musicbrainzngs.get_recordings_by_isrc(isrc)
+        mbid = result.get('isrc', {}).get('recording-list', [])[0].get('id')
+        return mbid if mbid else None
+    except musicbrainzngs.ResponseError as e:
+        print(f"MusicBrainz error for ISRC {isrc}: {e}")
+    except Exception as e:
+        print(f"Unexpected error for ISRC {isrc}: {e}")
+    return None
 
-def fetch_audio_features(
-    sp_client: spotipy.Spotify, track_ids: List[str]
-) -> Dict[str, dict]:
-    """Fetch audio features, batching safely under Spotify's limit using the new API call."""
-    features_map: Dict[str, dict] = {}
+# ── AcousticBrainz query ────────────────────────────────────────────────────
+def get_features_from_ab(mbid: str) -> Optional[List[float]]:
+    try:
+        url = f"{ACOUSTIC_API_BASE}/{mbid}/low-level"
+        r = requests.get(url, timeout=10)
+        if r.status_code != 200:
+            return None
+        data: Dict = r.json()
+        lowlevel: Dict = data.get('lowlevel', {})
+        rhythm: Dict = data.get('rhythm', {})
+        energy: Dict = lowlevel.get('spectral_energy', {})
+        return [
+            rhythm.get('danceability', 0),
+            rhythm.get('bpm', 0),
+            energy.get('mean', 0),
+            lowlevel.get('average_loudness', 0)
+        ]
+    except Exception as e:
+        print(f"AB fetch failed for {mbid}: {e}")
+        return None
 
-    for start in range(0, len(track_ids), BATCH_SIZE_AUDIO):
-        batch_ids = track_ids[start : start + BATCH_SIZE_AUDIO]
+# ── ML helpers ─────────────────────────────────────────────────────────────
+def cluster_features(mat: np.ndarray):
+    scaler = StandardScaler()
+    X = scaler.fit_transform(mat)
+    labels = KMeans(n_clusters=N_CLUSTERS, random_state=42).fit_predict(X)
+    return labels
 
-        while True:
-            try:
-                # TODO: Fix audio_feature call error 403
-                # Directly call the new API endpoint to avoid deprecation warning
-                features_batch = sp_client.audio_features(batch_ids)
-                #ids_param = ",".join(batch_ids)
-                #response = sp_client._get(f"audio-features?ids={ids_param}")
-                #features_batch = response.get("audio_features", [])
-                break
-            except SpotifyException as exc:
-                if exc.http_status == 429:
-                    wait = int(exc.headers.get("Retry-After", 1))
-                    print(f"Rate-limited. Waiting {wait}s…")
-                    time.sleep(wait)
-                elif exc.http_status == 403 and len(batch_ids) > 1:
-                    # Fallback: split batch in half and retry
-                    mid = len(batch_ids) // 2
-                    batch_ids = batch_ids[:mid]
-                    print(f"Received 403, splitting batch and retrying with {batch_ids}")
-                    continue
-                else:
-                    raise  # re-throw other errors
+def map_clusters_to_moods(mat: np.ndarray, labels: np.ndarray):
+    arr = []
+    for k in range(N_CLUSTERS):
+        sub = mat[labels == k]
+        if sub.size:
+            arr.append((k, sub[:,2].mean(), sub[:,1].mean()))
+    arr.sort(key=lambda x: (x[1], x[2]))
+    return {idx: mood for (idx, *_), mood in zip(arr, MOOD_LABELS)}
 
-        for feat in features_batch:
-            if feat:  # skip None for local or unavailable tracks
-                features_map[feat["id"]] = feat
-        time.sleep(RATE_DELAY)
+# ── Main function ──────────────────────────────────────────────────────────
+def main():
+    sp = authenticate_spotify()
+    uid = sp.me()['id']
+    tracks = fetch_spotify_likes(sp)
+    print(f"Got {len(tracks)} liked tracks with ISRCs")
 
-    return features_map
+    feats, ids = [], []
+    for t in tracks:
+        mbid = mbid_for_isrc(t['isrc'])
+        if not mbid:
+            continue
+        f = get_features_from_ab(mbid)
+        print(f"Song infos: {f}")
+        if f and all(v > 0 for v in f):
+            feats.append(f)
+            ids.append(t['id'])
+        #time.sleep(RATE_DELAY)
 
+    if not feats:
+        print("No AcousticBrainz data found—exiting.")
+        return
+    print(f"Valid feature vectors: {len(feats)} / {len(tracks)}")
 
-# ── Mood classification ─────────────────────────────────────────────────────
-def classify_mood(features: dict) -> str:
-    """Return the mood bucket for a track based on its audio features."""
-    energy = features["energy"]
-    danceability = features["danceability"]
-    valence = features["valence"]
-    tempo = features["tempo"]
-    acoustic = features["acousticness"]
+    mat = np.array(feats)
+    labels = cluster_features(mat)
+    cmap = map_clusters_to_moods(mat, labels)
 
-    if energy < ENERGY_LOW and danceability < DANCE_LOW:
-        return "Chill"
-    if valence > VALENCE_HIGH:
-        return "Feel‑Good"
-    if danceability > DANCE_HIGH:
-        return "Dance"
-    if energy > ENERGY_HIGH and tempo > TEMPO_WORKOUT:
-        return "Workout"
-    if acoustic > ACOUSTIC_HIGH:
-        return "Mellow"
-    return "Misc & Other"
+    bucket = defaultdict(list)
+    for tid, lbl in zip(ids, labels):
+        bucket[cmap[lbl]].append(tid)
 
+    for mood in MOOD_LABELS:
+        print(f"{mood}: {len(bucket[mood])} tracks")
 
-# ── Main routine ────────────────────────────────────────────────────────────
-def main() -> None:
-    """Build or update one playlist per mood bucket."""
-    sp_client = authenticate_spotify()
-    token_info = sp_client.auth_manager.get_cached_token()
-    print(token_info)
-    user_id = sp_client.me()["id"]
-
-    track_ids = fetch_liked_track_ids(sp_client)
-    print(f"Fetched {len(track_ids)} liked track(s).")
-
-    audio_features = fetch_audio_features(sp_client, track_ids)
-
-    # Bucket track IDs by mood
-    mood_dict: Dict[str, List[str]] = defaultdict(list)
-    for tid in track_ids:
-        feats = audio_features.get(tid)
-        if feats:
-            bucket = classify_mood(feats)
-            mood_dict[bucket].append(tid)
-
-    # Summary
-    for bucket in MOOD_BUCKETS:
-        print(f"{bucket}: {len(mood_dict.get(bucket, []))} track(s)")
-
-    # Create/update playlists
-    for bucket, ids in mood_dict.items():
-        playlist_name = f"{PLAYLIST_PREFIX} - {bucket}"
-        description = f"Auto‑generated {bucket} playlist {DESCRIPTION_TAG}"
-
-        # Check if playlist exists
-        playlist_id = None
-        page = sp_client.current_user_playlists(limit=50)
-        while page and not playlist_id:
-            for pl in page["items"]:
-                if pl["owner"]["id"] == user_id and pl["name"].lower() == playlist_name.lower():
-                    playlist_id = pl["id"]
+    for mood, tids in bucket.items():
+        if not tids:
+            continue
+        pname, desc = f"{PLAYLIST_PREFIX} - {mood}", f"Auto‑{mood} {DESCRIPTION_TAG}"
+        pid = None
+        pg = sp.current_user_playlists(limit=50)
+        while pg:
+            for pl in pg['items']:
+                if pl['owner']['id'] == uid and pl['name'].lower() == pname.lower():
+                    pid = pl['id']
                     break
-            page = sp_client.next(page) if page.get("next") else None
+            if pid or not pg['next']:
+                break
+            pg = sp.next(pg)
 
-        if playlist_id:
-            print(f"Updating playlist: {playlist_name}")
-            sp_client.playlist_replace_items(playlist_id, [])
+        if pid:
+            print("Updating", pname)
+            sp.playlist_replace_items(pid, [])
         else:
-            print(f"Creating playlist: {playlist_name}")
-            playlist = sp_client.user_playlist_create(
-                user=user_id,
-                name=playlist_name,
-                public=True,
-                description=description,
-            )
-            playlist_id = playlist["id"]
+            print("Creating", pname)
+            pid = sp.user_playlist_create(uid, pname, description=desc)['id']
 
-        # Add tracks in chunks of 100
-        for start in range(0, len(ids), 100):
-            sp_client.playlist_add_items(playlist_id, ids[start : start + 100])
-            time.sleep(RATE_DELAY)
-
+        for i in range(0, len(tids), 100):
+            sp.playlist_add_items(pid, tids[i:i+100])
 
 if __name__ == "__main__":
     main()
