@@ -1,6 +1,8 @@
 """Sort Spotify liked tracks into mood playlists using AcousticBrainz API + musicbrainzngs."""
 
 import os
+import re
+import time
 from collections import defaultdict
 from typing import Dict, List, Optional
 
@@ -43,7 +45,13 @@ def fetch_spotify_likes(sp: Spotify) -> List[dict]:
             t = item['track']
             isrc = t['external_ids'].get('isrc')
             if isrc:
-                tracks.append({'id': t['id'], 'name': t['name'], 'isrc': isrc})
+                # Ensure it's a string, remove special characters, and make uppercase
+                cleaned_isrc = re.sub(r'[^A-Za-z0-9]', '', str(isrc)).upper()
+                tracks.append({
+                    'id': t['id'],
+                    'name': t['name'],
+                    'isrc': cleaned_isrc
+                })
         results = sp.next(results) if results['next'] else None
     return tracks
 
@@ -109,11 +117,10 @@ def main():
         if not mbid:
             continue
         f = get_features_from_ab(mbid)
-        print(f"Song infos: {f}")
         if f and all(v > 0 for v in f):
             feats.append(f)
             ids.append(t['id'])
-        #time.sleep(RATE_DELAY)
+        time.sleep(RATE_DELAY)
 
     if not feats:
         print("No AcousticBrainz data found—exiting.")
