@@ -12,23 +12,22 @@ Environment variables expected (via .env):
 """
 
 from __future__ import annotations
-
+from collections import defaultdict
+from typing import Dict, List
+import sys
 import os
 import time
-from collections import defaultdict
-from typing import Any, Dict, List
-
-from dotenv import load_dotenv
 import spotipy
-from spotipy.oauth2 import SpotifyOAuth
 from spotipy.exceptions import SpotifyException
 
-# --------------------------------------------------------------------------- #
-# Constant configuration                                                      #
-# --------------------------------------------------------------------------- #
-SCOPE = (
-    "user-library-read playlist-modify-public playlist-modify-private ugc-image-upload"
-)
+# Add the project root to sys.path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+# Import functions from other files
+from src.authenticate_spotify import authenticate_spotify
+from src.fetch_from_spotify import fetch_liked_tracks
+
+# ── Constants ─────────────────────────────────────────────────────────────
 GENRE_PLAYLIST_PREFIX = "Playlist"      # helps the playlists sort together
 DESCRIPTION_TAG = "[AUTO]"              # marker to identify auto‑generated lists
 RATE_DELAY = 0.2                        # polite delay between API writes (seconds)
@@ -80,31 +79,6 @@ GENRE_GROUPS: Dict[str, List[str]] = {
     ],
 }
 
-# --------------------------------------------------------------------------- #
-# Helper functions                                                            #
-# --------------------------------------------------------------------------- #
-def authenticate_spotify() -> spotipy.Spotify:
-    """Return an authenticated Spotipy client using environment variables."""
-    load_dotenv()  # ensure .env is loaded
-    auth_manager = SpotifyOAuth(
-        client_id=os.getenv("SPOTIPY_CLIENT_ID"),
-        client_secret=os.getenv("SPOTIPY_CLIENT_SECRET"),
-        redirect_uri=os.getenv("SPOTIPY_REDIRECT_URI"),
-        scope=SCOPE,
-    )
-    return spotipy.Spotify(auth_manager=auth_manager)
-
-
-def fetch_liked_tracks(sp_client: spotipy.Spotify) -> List[Dict[str, Any]]:
-    """Return the full list of saved (liked) tracks for the current user."""
-    tracks: List[Dict[str, Any]] = []
-    results = sp_client.current_user_saved_tracks(limit=50)
-    while results:
-        tracks.extend(item["track"] for item in results["items"])
-        results = sp_client.next(results) if results["next"] else None
-    return tracks
-
-
 def get_genres_for_artists(
     sp_client: spotipy.Spotify,
     artist_ids: list[str],
@@ -138,9 +112,7 @@ def map_to_group(genre: str) -> str:
     return "Misc & Other"
 
 
-# --------------------------------------------------------------------------- #
-# Main routine                                                                #
-# --------------------------------------------------------------------------- #
+# ── Main function ──────────────────────────────────────────────────────────
 def main() -> None:
     """Entry point: build or update one playlist per genre cluster."""
     sp_client = authenticate_spotify()

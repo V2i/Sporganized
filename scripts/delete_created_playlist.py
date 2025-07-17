@@ -9,37 +9,21 @@ to be set in a `.env` file (handled by python‑dotenv).
 """
 
 from __future__ import annotations
-
+from typing import Any
+import sys
 import os
 import time
-from typing import Any
-
-from dotenv import load_dotenv
 import spotipy
-from spotipy.oauth2 import SpotifyOAuth
 
-# ── Load environment variables ──────────────────────────────────────────────
-load_dotenv()
+# Add the project root to sys.path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-CLIENT_ID: str | None = os.getenv("SPOTIPY_CLIENT_ID")
-CLIENT_SECRET: str | None = os.getenv("SPOTIPY_CLIENT_SECRET")
-REDIRECT_URI: str | None = os.getenv("SPOTIPY_REDIRECT_URI")
+# Import functions from other files
+from src.authenticate_spotify import authenticate_spotify
 
-SCOPE = "playlist-modify-public playlist-modify-private"
+# ── Constants ────────────────────────────────────────────────────────────────
 AUTO_TAG = "[AUTO]"        # text to look for in the playlist description
 BATCH_DELAY = 0.2          # seconds to wait after each delete (rate‑limit safety)
-
-
-def authenticate_spotify() -> spotipy.Spotify:
-    """Return an authenticated Spotipy client."""
-    auth_manager = SpotifyOAuth(
-        client_id=CLIENT_ID,
-        client_secret=CLIENT_SECRET,
-        redirect_uri=REDIRECT_URI,
-        scope=SCOPE,
-    )
-    return spotipy.Spotify(auth_manager=auth_manager)
-
 
 def delete_auto_playlists(sp_client: spotipy.Spotify, description_tag: str) -> int:
     """Delete every playlist *owned by the user* that contains `description_tag`.

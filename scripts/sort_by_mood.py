@@ -1,7 +1,7 @@
 """Sort Spotify liked tracks into mood playlists using AcousticBrainz API + musicbrainzngs."""
 
+import sys
 import os
-import re
 import time
 from collections import defaultdict
 from typing import Dict, List, Optional
@@ -9,14 +9,17 @@ from typing import Dict, List, Optional
 import musicbrainzngs
 import numpy as np
 import requests
-from dotenv import load_dotenv
 from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler
-from spotipy import Spotify
-from spotipy.oauth2 import SpotifyOAuth
+
+# Add the project root to sys.path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+# Import functions from other files
+from src.authenticate_spotify import authenticate_spotify
+from src.fetch_from_spotify import fetch_spotify_likes
 
 # ── Constants ─────────────────────────────────────────────────────────────
-SCOPE = "user-library-read playlist-modify-public playlist-modify-private"
 RATE_DELAY = 0.3
 N_CLUSTERS = 5
 PLAYLIST_PREFIX = "Mood"
@@ -28,32 +31,6 @@ ACOUSTIC_API_BASE = "https://acousticbrainz.org/api/v1"
 musicbrainzngs.set_useragent("SporganizedMoodSorter", "1.0", None)
 musicbrainzngs.set_rate_limit(limit_or_interval=False, new_requests=1)
 
-# ── Spotify auth & data fetch ─────────────────────────────────────────────
-def authenticate_spotify() -> Spotify:
-    load_dotenv()
-    return Spotify(auth_manager=SpotifyOAuth(
-        client_id=os.getenv("SPOTIPY_CLIENT_ID"),
-        client_secret=os.getenv("SPOTIPY_CLIENT_SECRET"),
-        redirect_uri=os.getenv("SPOTIPY_REDIRECT_URI"),
-        scope=SCOPE
-    ))
-
-def fetch_spotify_likes(sp: Spotify) -> List[dict]:
-    tracks, results = [], sp.current_user_saved_tracks(limit=50)
-    while results:
-        for item in results['items']:
-            t = item['track']
-            isrc = t['external_ids'].get('isrc')
-            if isrc:
-                # Ensure it's a string, remove special characters, and make uppercase
-                cleaned_isrc = re.sub(r'[^A-Za-z0-9]', '', str(isrc)).upper()
-                tracks.append({
-                    'id': t['id'],
-                    'name': t['name'],
-                    'isrc': cleaned_isrc
-                })
-        results = sp.next(results) if results['next'] else None
-    return tracks
 
 # ── MusicBrainz lookup (via musicbrainzngs) ───────────────────────────────
 def mbid_for_isrc(isrc: str) -> Optional[str]:
