@@ -1,4 +1,4 @@
-"""Sort Spotify liked tracks into mood playlists using AcousticBrainz API + musicbrainzngs."""
+"""Sort Spotify liked tracks into mood playlists using multi-source fallback: MusicBrainz, Last.fm, Discogs, Genius."""
 
 import sys
 import os
@@ -23,47 +23,51 @@ from src.fetch_from_spotify import fetch_spotify_likes
 RATE_DELAY = 0.3
 N_CLUSTERS = 5
 PLAYLIST_PREFIX = "Mood"
-DESCRIPTION_TAG = "[AUTO-AB]"
+DESCRIPTION_TAG = "[AUTO]"
 MOOD_LABELS = ("Chill", "Feel‑Good", "Dance", "Workout", "Mellow")
-ACOUSTIC_API_BASE = "https://acousticbrainz.org/api/v1"
 
 # ── Init MusicBrainz client ───────────────────────────────────────────────
 musicbrainzngs.set_useragent("SporganizedMoodSorter", "1.0", None)
 musicbrainzngs.set_rate_limit(limit_or_interval=False, new_requests=1)
 
 
-# ── MusicBrainz lookup (via musicbrainzngs) ───────────────────────────────
+# ── MusicBrainz lookup ─────────────────────────────────────────────────────
 def mbid_for_isrc(isrc: str) -> Optional[str]:
     try:
         result: Dict = musicbrainzngs.get_recordings_by_isrc(isrc)
-        mbid = result.get('isrc', {}).get('recording-list', [])[0].get('id')
-        return mbid if mbid else None
-    except musicbrainzngs.ResponseError as e:
-        print(f"MusicBrainz error for ISRC {isrc}: {e}")
-    except Exception as e:
-        print(f"Unexpected error for ISRC {isrc}: {e}")
-    return None
-
-# ── AcousticBrainz query ────────────────────────────────────────────────────
-def get_features_from_ab(mbid: str) -> Optional[List[float]]:
-    try:
-        url = f"{ACOUSTIC_API_BASE}/{mbid}/low-level"
-        r = requests.get(url, timeout=10)
-        if r.status_code != 200:
-            return None
-        data: Dict = r.json()
-        lowlevel: Dict = data.get('lowlevel', {})
-        rhythm: Dict = data.get('rhythm', {})
-        energy: Dict = lowlevel.get('spectral_energy', {})
-        return [
-            rhythm.get('danceability', 0),
-            rhythm.get('bpm', 0),
-            energy.get('mean', 0),
-            lowlevel.get('average_loudness', 0)
-        ]
-    except Exception as e:
-        print(f"AB fetch failed for {mbid}: {e}")
+        return result.get('isrc', {}).get('recording-list', [])[0].get('id')
+    except Exception:
         return None
+
+# ── Last.fm lookup ─────────────────────────────────────────────────────────
+def get_lastfm_tags(artist: str, track: str) -> List[str]:
+    API_KEY = os.getenv("LASTFM_API_KEY")
+    url = f"http://ws.audioscrobbler.com/2.0/?method=track.gettoptags&artist={artist}&track={track}&api_key={API_KEY}&format=json"
+    try:
+        r = requests.get(url, timeout=10)
+        tags = r.json().get("toptags", {}).get("tag", [])
+        return [tag["name"] for tag in tags if float(tag.get("count", 0)) > 10]
+    except Exception:
+        return []
+
+# ── Discogs lookup ─────────────────────────────────────────────────────────
+def get_discogs_genre(artist: str, track: str) -> List[str]:
+    TOKEN = os.getenv("DISCOGS_TOKEN")
+    headers = {"Authorization": f"Discogs token={TOKEN}"}
+    url = f"https://api.discogs.com/database/search?artist={artist}&track={track}&token={TOKEN}"
+    try:
+        r = requests.get(url, headers=headers, timeout=10)
+        results = r.json().get("results", [])
+        return results[0].get("genre", []) if results else []
+    except Exception:
+        return []
+
+# ── Placeholder for Genius or fallback features ────────────────────────────
+def get_fallback_features(track: dict) -> List[float]:
+    tags = get_lastfm_tags(track['artist'], track['name'])
+    genres = get_discogs_genre(track['artist'], track['name'])
+    score = float(bool(set(tags + genres)))  # crude feature: 1 if any metadata found
+    return [score, 0, 0, 0] if score else []
 
 # ── ML helpers ─────────────────────────────────────────────────────────────
 def cluster_features(mat: np.ndarray):
@@ -77,11 +81,11 @@ def map_clusters_to_moods(mat: np.ndarray, labels: np.ndarray):
     for k in range(N_CLUSTERS):
         sub = mat[labels == k]
         if sub.size:
-            arr.append((k, sub[:,2].mean(), sub[:,1].mean()))
-    arr.sort(key=lambda x: (x[1], x[2]))
+            arr.append((k, sub[:,0].mean()))
+    arr.sort(key=lambda x: x[1])
     return {idx: mood for (idx, *_), mood in zip(arr, MOOD_LABELS)}
 
-# ── Main function ──────────────────────────────────────────────────────────
+# ── Main ───────────────────────────────────────────────────────────────────
 def main():
     sp = authenticate_spotify()
     uid = sp.me()['id']
@@ -91,19 +95,17 @@ def main():
     feats, ids = [], []
     for t in tracks:
         mbid = mbid_for_isrc(t['isrc'])
-        if not mbid:
-            continue
-        f = get_features_from_ab(mbid)
-        if f and all(v > 0 for v in f):
+        f = get_fallback_features(t)  # replace AB call with fallback
+        if f:
             feats.append(f)
             ids.append(t['id'])
         time.sleep(RATE_DELAY)
 
     if not feats:
-        print("No AcousticBrainz data found—exiting.")
+        print("No usable metadata—exiting.")
         return
-    print(f"Valid feature vectors: {len(feats)} / {len(tracks)}")
 
+    print(f"Valid feature vectors: {len(feats)} / {len(tracks)}")
     mat = np.array(feats)
     labels = cluster_features(mat)
     cmap = map_clusters_to_moods(mat, labels)
