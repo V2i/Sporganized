@@ -36,3 +36,14 @@ jobs:
             echo "✅ Pylint passed with score: $SCORE"
             exit 0
           fi
+
+      - name: Print pylint summary
+        run: |
+          echo "=== Pylint Summary ==="
+          tail -n 10 pylint.log
+
+      - name: Upload full pylint log
+        uses: actions/upload-artifact@v4
+        with:
+          name: pylint-full-log
+          path: pylint.log
