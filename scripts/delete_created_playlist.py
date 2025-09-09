@@ -9,18 +9,11 @@ Environment variables to be set in a `.env` file (handled by python‑dotenv):
 
 from __future__ import annotations
 from typing import Any
-import sys
-import os
 import time
 import spotipy
 
-# Add the project root to sys.path
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-
-# Import functions from other files
+# ── Constants & Functions ────────────────────────────────────────────────────────────────
 from src.authenticate_spotify import authenticate_spotify
-
-# ── Constants ────────────────────────────────────────────────────────────────
 import src.constants
 
 def delete_auto_playlists(sp_client: spotipy.Spotify, description_tag: str) -> int:

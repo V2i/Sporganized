@@ -26,6 +26,7 @@ jobs:
       - name: Run pylint and capture score
         id: pylint
         run: |
+          PYTHONPATH=. pylint scripts/ src/
           SCORE_LINE=$(pylint $(git ls-files '*.py') | tee pylint.log | tail -n 2 | head -n 1)
           echo "Pylint score line: $SCORE_LINE"
           SCORE=$(echo "$SCORE_LINE" | sed -n 's/.*rated at \([0-9.]*\)\/10.*/\1/p')

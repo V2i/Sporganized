@@ -14,20 +14,13 @@ Environment variables to be set in a `.env` file (handled by python‑dotenv):
 from __future__ import annotations
 from collections import defaultdict
 from typing import Dict, List
-import sys
-import os
 import time
 import spotipy
 from spotipy.exceptions import SpotifyException
 
-# Add the project root to sys.path
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-
-# Import functions from other files
-from src.authenticate_spotify import authenticate_spotify
+# ── Constants & Functions ─────────────────────────────────────────────────
 from src.fetch_from_spotify import fetch_liked_tracks
-
-# ── Constants ─────────────────────────────────────────────────────────────
+from src.authenticate_spotify import authenticate_spotify
 import src.constants
 from src.genre_groups import GENRE_GROUPS
 

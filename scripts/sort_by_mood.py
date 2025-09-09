@@ -7,26 +7,19 @@ Environment variables to be set in a `.env` file (handled by python‑dotenv):
     - SPOTIPY_REDIRECT_URI
 """
 
-import sys
 import os
 import time
 from collections import defaultdict
 from typing import Dict, List, Optional
-
 import musicbrainzngs
 import numpy as np
 import requests
 from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler
 
-# Add the project root to sys.path
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-
-# Import functions from other files
-from src.authenticate_spotify import authenticate_spotify
+# ── Constants & Functions ─────────────────────────────────────────────────
 from src.fetch_from_spotify import fetch_spotify_likes
-
-# ── Constants ─────────────────────────────────────────────────────────────
+from src.authenticate_spotify import authenticate_spotify
 import src.constants
 
 # ── Init MusicBrainz client ───────────────────────────────────────────────
@@ -34,7 +27,7 @@ musicbrainzngs.set_useragent("SporganizedMoodSorter", "1.0", None)
 musicbrainzngs.set_rate_limit(limit_or_interval=False, new_requests=1)
 
 
-# ── MusicBrainz lookup ─────────────────────────────────────────────────────
+# ── MusicBrainz lookup ────────────────────────────────────────────────────
 def mbid_for_isrc(isrc: str) -> Optional[str]:
     try:
         result: Dict = musicbrainzngs.get_recordings_by_isrc(isrc)
