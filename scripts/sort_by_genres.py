@@ -15,38 +15,13 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import Dict, List
 import time
-import spotipy
-from spotipy.exceptions import SpotifyException
 
 # ── Constants & Functions ─────────────────────────────────────────────────
-from src.fetch_from_spotify import fetch_liked_tracks
+from src.fetch_liked_tracks import fetch_liked_tracks
 from src.authenticate_spotify import authenticate_spotify
-import src.constants
+from src.get_artists_genre import get_artists_genre
+from  src.constants import PLAYLIST_PREFIX, DESCRIPTION_TAG, RATE_DELAY
 from src.genre_groups import GENRE_GROUPS
-
-def get_genres_for_artists(
-    sp_client: spotipy.Spotify,
-    artist_ids: list[str],
-) -> Dict[str, List[str]]:
-    """Fetch genres for all artists, handling rate limits and batching."""
-    artist_genres: Dict[str, List[str]] = {}
-    for start in range(0, len(artist_ids), 50):
-        batch = artist_ids[start : start + 50]
-        while True:
-            try:
-                artists_info = sp_client.artists(batch)["artists"]
-                break
-            except SpotifyException as exc:
-                if exc.http_status == 429:
-                    wait = int(exc.headers.get("Retry-After", 1))
-                    print(f"Rate‑limited. Waiting {wait}s…")
-                    time.sleep(wait)
-                else:
-                    raise
-        for artist in artists_info:
-            artist_genres[artist["id"]] = artist.get("genres", [])
-        time.sleep(src.constants.RATE_DELAY)
-    return artist_genres
 
 
 def map_to_group(genre: str) -> str:
@@ -55,7 +30,6 @@ def map_to_group(genre: str) -> str:
         if genre in subgenres:
             return group_name
     return "Misc & Other"
-
 
 # ── Main function ──────────────────────────────────────────────────────────
 def main() -> None:
@@ -70,7 +44,7 @@ def main() -> None:
     artist_ids = {
         artist["id"] for track in liked_tracks for artist in track["artists"]
     }
-    artist_genres_map = get_genres_for_artists(sp_client, list(artist_ids))
+    artist_genres_map = get_artists_genre(sp_client, list(artist_ids))
 
     # Bucket tracks into genre‑groups
     grouped_tracks: Dict[str, List[str]] = defaultdict(list)
@@ -88,9 +62,9 @@ def main() -> None:
 
     # Create or update playlists
     for group_label, track_ids in grouped_tracks.items():
-        playlist_name = f"{src.constants.PLAYLIST_PREFIX} - {group_label}"
+        playlist_name = f"{PLAYLIST_PREFIX} - {group_label}"
         description = (
-            f"Sporganized generated playlist · {group_label} {src.constants.DESCRIPTION_TAG}"
+            f"Sporganized generated playlist · {group_label} {DESCRIPTION_TAG}"
         )
 
         # Check if playlist already exists
@@ -122,7 +96,7 @@ def main() -> None:
         # Add tracks in 100‑track batches
         for start in range(0, len(track_ids), 100):
             sp_client.playlist_add_items(playlist_id, track_ids[start : start + 100])
-            time.sleep(src.constants.RATE_DELAY)
+            time.sleep(RATE_DELAY)
 
 
 if __name__ == "__main__":
