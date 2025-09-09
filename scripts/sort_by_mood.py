@@ -6,39 +6,32 @@ Environment variables to be set in a `.env` file (handled by python‑dotenv):
     - SPOTIPY_CLIENT_SECRET
     - SPOTIPY_REDIRECT_URI
 """
-
-import os
+ 
 import time
 from collections import defaultdict
-from typing import Dict, List, Optional
-import musicbrainzngs
+from typing import List
 import numpy as np
 import requests
 from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler
 
 # ── Constants & Functions ─────────────────────────────────────────────────
-from src.fetch_from_spotify import fetch_spotify_likes
+from src.fetch_liked_tracks import fetch_liked_tracks
 from src.authenticate_spotify import authenticate_spotify
-import src.constants
-
-# ── Init MusicBrainz client ───────────────────────────────────────────────
-musicbrainzngs.set_useragent("SporganizedMoodSorter", "1.0", None)
-musicbrainzngs.set_rate_limit(limit_or_interval=False, new_requests=1)
-
-
-# ── MusicBrainz lookup ────────────────────────────────────────────────────
-def mbid_for_isrc(isrc: str) -> Optional[str]:
-    try:
-        result: Dict = musicbrainzngs.get_recordings_by_isrc(isrc)
-        return result.get('isrc', {}).get('recording-list', [])[0].get('id')
-    except Exception:
-        return None
+from src.constants import (
+    LASTFM_API_URL,
+    DISCOG_API_URL,
+    N_CLUSTERS,
+    MOOD_LABELS,
+    RATE_DELAY,
+    PLAYLIST_PREFIX,
+    DESCRIPTION_TAG,
+    LASTFM_API_KEY,
+)
 
 # ── Last.fm lookup ─────────────────────────────────────────────────────────
 def get_lastfm_tags(artist: str, track: str) -> List[str]:
-    API_KEY = os.getenv("LASTFM_API_KEY")
-    url = f"{src.constants.LASTFM_API_URL}?method=track.gettoptags&artist={artist}&track={track}&api_key={API_KEY}&format=json"
+    url = f"{LASTFM_API_URL}?method=track.gettoptags&artist={artist}&track={track}&api_key={LASTFM_API_KEY}&format=json"
     try:
         r = requests.get(url, timeout=10)
         tags = r.json().get("toptags", {}).get("tag", [])
@@ -48,11 +41,9 @@ def get_lastfm_tags(artist: str, track: str) -> List[str]:
 
 # ── Discogs lookup ─────────────────────────────────────────────────────────
 def get_discogs_genre(artist: str, track: str) -> List[str]:
-    TOKEN = os.getenv("DISCOGS_TOKEN")
-    headers = {"Authorization": f"Discogs token={TOKEN}"}
-    url = f"{src.constants.DISCOG_API_URL}?artist={artist}&track={track}&token={TOKEN}"
+    url = f"{DISCOG_API_URL}?artist={artist}&track={track}"
     try:
-        r = requests.get(url, headers=headers, timeout=10)
+        r = requests.get(url, timeout=10)
         results = r.json().get("results", [])
         return results[0].get("genre", []) if results else []
     except Exception:
@@ -62,40 +53,40 @@ def get_discogs_genre(artist: str, track: str) -> List[str]:
 def get_fallback_features(track: dict) -> List[float]:
     tags = get_lastfm_tags(track['artist'], track['name'])
     genres = get_discogs_genre(track['artist'], track['name'])
-    score = float(bool(set(tags + genres)))  # crude feature: 1 if any metadata found
+    # crude feature: 1 if any metadata found
+    score = float(bool(set(tags + genres)))
     return [score, 0, 0, 0] if score else []
 
 # ── ML helpers ─────────────────────────────────────────────────────────────
 def cluster_features(mat: np.ndarray):
     scaler = StandardScaler()
     X = scaler.fit_transform(mat)
-    labels = KMeans(n_clusters=src.constants.N_CLUSTERS, random_state=42).fit_predict(X)
+    labels = KMeans(n_clusters=N_CLUSTERS, random_state=42).fit_predict(X)
     return labels
 
 def map_clusters_to_moods(mat: np.ndarray, labels: np.ndarray):
     arr = []
-    for k in range(src.constants.N_CLUSTERS):
+    for k in range(N_CLUSTERS):
         sub = mat[labels == k]
         if sub.size:
             arr.append((k, sub[:,0].mean()))
     arr.sort(key=lambda x: x[1])
-    return {idx: mood for (idx, *_), mood in zip(arr, src.constants.MOOD_LABELS)}
+    return {idx: mood for (idx, *_), mood in zip(arr, MOOD_LABELS)}
 
 # ── Main ───────────────────────────────────────────────────────────────────
 def main():
     sp = authenticate_spotify()
     uid = sp.me()['id']
-    tracks = fetch_spotify_likes(sp)
+    tracks = fetch_liked_tracks(sp, True)
     print(f"Got {len(tracks)} liked tracks with ISRCs")
 
     feats, ids = [], []
     for t in tracks:
-        mbid = mbid_for_isrc(t['isrc'])
         f = get_fallback_features(t)  # replace AB call with fallback
         if f:
             feats.append(f)
             ids.append(t['id'])
-        time.sleep(src.constants.RATE_DELAY)
+        time.sleep(RATE_DELAY)
 
     if not feats:
         print("No usable metadata—exiting.")
@@ -110,13 +101,14 @@ def main():
     for tid, lbl in zip(ids, labels):
         bucket[cmap[lbl]].append(tid)
 
-    for mood in src.constants.MOOD_LABELS:
+    for mood in MOOD_LABELS:
         print(f"{mood}: {len(bucket[mood])} tracks")
 
     for mood, tids in bucket.items():
         if not tids:
             continue
-        pname, desc = f"{src.constants.PLAYLIST_PREFIX} - {mood}", f"Auto‑{mood} {src.constants.DESCRIPTION_TAG}"
+        pname = f"{PLAYLIST_PREFIX} - {mood}"
+        desc = f"Auto‑{mood} {DESCRIPTION_TAG}"
         pid = None
         pg = sp.current_user_playlists(limit=50)
         while pg:

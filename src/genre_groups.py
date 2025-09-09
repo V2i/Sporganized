@@ -1,9 +1,15 @@
+"""
+Manual mapping of genres to broader music clusters.
+
+This dictionary groups specific music genres into larger categories,
+which can be customized to suit personal preferences.
+
+Keys (str): Cluster names, e.g., "Hip Hop & Rap", "Rock & Alternative".
+Values (List[str]): Specific genres belonging to each cluster.
+"""
+
 from typing import Dict, List
 
-# --------------------------------------------------------------------------- #
-# Manual genre-cluster mapping                                                #
-# Can be edited to your personal preferences                                  #
-# --------------------------------------------------------------------------- #
 GENRE_GROUPS: Dict[str, List[str]] = {
     "Hip Hop & Rap": [
         "rap", "emo rap", "gangster rap", "southern hip hop", "old school hip hop",

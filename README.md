@@ -79,9 +79,9 @@ pip install -r requirements.txt
 
 4. **Run any script:**
 
-   - `python -m sort_by_genres.py`: This will authenticate via your browser (only the first time), fetch your liked songs, and start organizing them by genre.
-   - `python -m sort_by_mood.py`: This script takes your liked songs and sorts them into playlists based on mood, using extra info from music databases like MusicBrainz, Last.fm, and Discogs.
-   - `python -m delete_created_playlist.py`: Clean up your auto-generated playlists in one click. ⚠️ This deletes **ANY** playlists with `[AUTO]` in their description.
+   - `python -m scripts.sort_by_genres`: This will authenticate via your browser (only the first time), fetch your liked songs, and start organizing them by genre.
+   - `python -m scripts.sort_by_mood`: This script takes your liked songs and sorts them into playlists based on mood, using extra info from music databases like Last.fm, and Discogs. ⚠️ Still in development.
+   - `python -m scripts.delete_created_playlist`: Clean up your auto-generated playlists in one click. ⚠️ This deletes **ANY** playlists with `[AUTO]` in their description.
 
 ---
 

@@ -14,7 +14,7 @@ import spotipy
 
 # ── Constants & Functions ────────────────────────────────────────────────────────────────
 from src.authenticate_spotify import authenticate_spotify
-import src.constants
+from src.constants import RATE_DELAY, DESCRIPTION_TAG
 
 def delete_auto_playlists(sp_client: spotipy.Spotify, description_tag: str) -> int:
     """Delete every playlist *owned by the user* that contains `description_tag`.
@@ -44,7 +44,7 @@ def delete_auto_playlists(sp_client: spotipy.Spotify, description_tag: str) -> i
                     sp_client.current_user_unfollow_playlist(playlist["id"])
                     deleted_total += 1
                     deleted_this_round += 1
-                    time.sleep(src.constants.RATE_DELAY)
+                    time.sleep(RATE_DELAY)
 
             playlists = sp_client.next(playlists) if playlists["next"] else None
 
@@ -57,9 +57,11 @@ def delete_auto_playlists(sp_client: spotipy.Spotify, description_tag: str) -> i
 def main() -> None:
     """Script entry point."""
     sp_client = authenticate_spotify()
-    total_deleted = delete_auto_playlists(sp_client, src.constants.DESCRIPTION_TAG)
-    print(f"\n✅ Finished. Deleted {total_deleted} playlist(s) with '{src.constants.DESCRIPTION_TAG}' in the description.")
-
+    total_deleted = delete_auto_playlists(sp_client, DESCRIPTION_TAG)
+    print(
+        f"\n✅ Finished. Deleted {total_deleted} playlist(s) "
+        f"with '{DESCRIPTION_TAG}' in the description."
+    )
 
 if __name__ == "__main__":
     main()
