@@ -1,11 +1,10 @@
 """Delete all Spotify playlists owned by the user that contain “[AUTO]” in
 their description.
 
-Requires:
+Environment variables to be set in a `.env` file (handled by python‑dotenv):
     - SPOTIPY_CLIENT_ID
     - SPOTIPY_CLIENT_SECRET
     - SPOTIPY_REDIRECT_URI
-to be set in a `.env` file (handled by python‑dotenv).
 """
 
 from __future__ import annotations
@@ -22,8 +21,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from src.authenticate_spotify import authenticate_spotify
 
 # ── Constants ────────────────────────────────────────────────────────────────
-AUTO_TAG = "[AUTO]"        # text to look for in the playlist description
-BATCH_DELAY = 0.2          # seconds to wait after each delete (rate‑limit safety)
+import src.constants
 
 def delete_auto_playlists(sp_client: spotipy.Spotify, description_tag: str) -> int:
     """Delete every playlist *owned by the user* that contains `description_tag`.
@@ -53,7 +51,7 @@ def delete_auto_playlists(sp_client: spotipy.Spotify, description_tag: str) -> i
                     sp_client.current_user_unfollow_playlist(playlist["id"])
                     deleted_total += 1
                     deleted_this_round += 1
-                    time.sleep(BATCH_DELAY)
+                    time.sleep(src.constants.RATE_DELAY)
 
             playlists = sp_client.next(playlists) if playlists["next"] else None
 
@@ -66,8 +64,8 @@ def delete_auto_playlists(sp_client: spotipy.Spotify, description_tag: str) -> i
 def main() -> None:
     """Script entry point."""
     sp_client = authenticate_spotify()
-    total_deleted = delete_auto_playlists(sp_client, AUTO_TAG)
-    print(f"\n✅ Finished. Deleted {total_deleted} playlist(s) with '{AUTO_TAG}' in the description.")
+    total_deleted = delete_auto_playlists(sp_client, src.constants.DESCRIPTION_TAG)
+    print(f"\n✅ Finished. Deleted {total_deleted} playlist(s) with '{src.constants.DESCRIPTION_TAG}' in the description.")
 
 
 if __name__ == "__main__":

@@ -1,4 +1,11 @@
-"""Sort Spotify liked tracks into mood playlists using multi-source fallback: MusicBrainz, Last.fm, Discogs, Genius."""
+"""Sort Spotify liked tracks into mood playlists using multi-source fallback:
+MusicBrainz, Last.fm, Discogs, Genius.
+
+Environment variables to be set in a `.env` file (handled by python‑dotenv):
+    - SPOTIPY_CLIENT_ID
+    - SPOTIPY_CLIENT_SECRET
+    - SPOTIPY_REDIRECT_URI
+"""
 
 import sys
 import os
@@ -20,11 +27,7 @@ from src.authenticate_spotify import authenticate_spotify
 from src.fetch_from_spotify import fetch_spotify_likes
 
 # ── Constants ─────────────────────────────────────────────────────────────
-RATE_DELAY = 0.3
-N_CLUSTERS = 5
-PLAYLIST_PREFIX = "Mood"
-DESCRIPTION_TAG = "[AUTO]"
-MOOD_LABELS = ("Chill", "Feel‑Good", "Dance", "Workout", "Mellow")
+import src.constants
 
 # ── Init MusicBrainz client ───────────────────────────────────────────────
 musicbrainzngs.set_useragent("SporganizedMoodSorter", "1.0", None)
@@ -42,7 +45,7 @@ def mbid_for_isrc(isrc: str) -> Optional[str]:
 # ── Last.fm lookup ─────────────────────────────────────────────────────────
 def get_lastfm_tags(artist: str, track: str) -> List[str]:
     API_KEY = os.getenv("LASTFM_API_KEY")
-    url = f"http://ws.audioscrobbler.com/2.0/?method=track.gettoptags&artist={artist}&track={track}&api_key={API_KEY}&format=json"
+    url = f"{src.constants.LASTFM_API_URL}?method=track.gettoptags&artist={artist}&track={track}&api_key={API_KEY}&format=json"
     try:
         r = requests.get(url, timeout=10)
         tags = r.json().get("toptags", {}).get("tag", [])
@@ -54,7 +57,7 @@ def get_lastfm_tags(artist: str, track: str) -> List[str]:
 def get_discogs_genre(artist: str, track: str) -> List[str]:
     TOKEN = os.getenv("DISCOGS_TOKEN")
     headers = {"Authorization": f"Discogs token={TOKEN}"}
-    url = f"https://api.discogs.com/database/search?artist={artist}&track={track}&token={TOKEN}"
+    url = f"{src.constants.DISCOG_API_URL}?artist={artist}&track={track}&token={TOKEN}"
     try:
         r = requests.get(url, headers=headers, timeout=10)
         results = r.json().get("results", [])
@@ -73,17 +76,17 @@ def get_fallback_features(track: dict) -> List[float]:
 def cluster_features(mat: np.ndarray):
     scaler = StandardScaler()
     X = scaler.fit_transform(mat)
-    labels = KMeans(n_clusters=N_CLUSTERS, random_state=42).fit_predict(X)
+    labels = KMeans(n_clusters=src.constants.N_CLUSTERS, random_state=42).fit_predict(X)
     return labels
 
 def map_clusters_to_moods(mat: np.ndarray, labels: np.ndarray):
     arr = []
-    for k in range(N_CLUSTERS):
+    for k in range(src.constants.N_CLUSTERS):
         sub = mat[labels == k]
         if sub.size:
             arr.append((k, sub[:,0].mean()))
     arr.sort(key=lambda x: x[1])
-    return {idx: mood for (idx, *_), mood in zip(arr, MOOD_LABELS)}
+    return {idx: mood for (idx, *_), mood in zip(arr, src.constants.MOOD_LABELS)}
 
 # ── Main ───────────────────────────────────────────────────────────────────
 def main():
@@ -99,7 +102,7 @@ def main():
         if f:
             feats.append(f)
             ids.append(t['id'])
-        time.sleep(RATE_DELAY)
+        time.sleep(src.constants.RATE_DELAY)
 
     if not feats:
         print("No usable metadata—exiting.")
@@ -114,13 +117,13 @@ def main():
     for tid, lbl in zip(ids, labels):
         bucket[cmap[lbl]].append(tid)
 
-    for mood in MOOD_LABELS:
+    for mood in src.constants.MOOD_LABELS:
         print(f"{mood}: {len(bucket[mood])} tracks")
 
     for mood, tids in bucket.items():
         if not tids:
             continue
-        pname, desc = f"{PLAYLIST_PREFIX} - {mood}", f"Auto‑{mood} {DESCRIPTION_TAG}"
+        pname, desc = f"{src.constants.PLAYLIST_PREFIX} - {mood}", f"Auto‑{mood} {src.constants.DESCRIPTION_TAG}"
         pid = None
         pg = sp.current_user_playlists(limit=50)
         while pg:

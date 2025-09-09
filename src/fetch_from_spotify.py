@@ -1,3 +1,4 @@
+import re
 from typing import Dict, List, Any
 from spotipy import Spotify
 

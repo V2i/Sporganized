@@ -15,10 +15,10 @@ It uses the [Spotify Web API](https://developer.spotify.com/documentation/web-ap
 ## ✅ Features
 
 - ✅ Automatically fetch all your liked songs from Spotify  
-- ✅ Extract artist genres via Spotify's metadata  
-- ✅ Group tracks by genre (you can customize or filter genre categories)  
-- ✅ Create a dedicated playlist per genre in your Spotify account  
-- ✅ Load environment variables securely via `.env`  
+- ✅ Extract artist genres via Spotify's metadata and other metadata from [Discog](https://www.discogs.com/fr/) and [LastFM](https://www.last.fm/)
+- ✅ Group tracks by genre (you can customize or filter genre groups by editing <a href="./src/genre_groups.py">`genre_groups.py`</a>)  
+- ✅ Group tracks by moop (using ML and metadata from other databases)
+- ✅ Delete all the playlist created with scripts 
 - ✅ Cross-platform support (tested on **Windows** and **Linux**)
 
 ---
@@ -77,24 +77,11 @@ pip install -r requirements.txt
    SPOTIPY_REDIRECT_URI=http://127.0.0.1:8888/callback
    ```
 
-4. **Run the app:**
+4. **Run any script:**
 
-   ```bash
-   python genre_sorter.py
-   ```
-
-   This will authenticate via your browser, fetch your liked songs, and start organizing them.
-
----
-
-## 🛠️ How It Works
-
-- The script uses Spotipy to get all your liked tracks.
-- It fetches **artist genres** from the Spotify API.
-- Tracks are grouped by genre (based on artist metadata).
-- For each genre, a **Spotify playlist** is created and filled with matching tracks.
-
-> Note: Genre data is only available at the artist level, not per track, so classification may be approximate.
+   - `python sort_by_genres.py`: This will authenticate via your browser (only the first time), fetch your liked songs, and start organizing them by genre.
+   - `python sort_by_mood.py`: This script takes your liked songs and sorts them into playlists based on mood, using extra info from music databases like MusicBrainz, Last.fm, and Discogs.
+   - `python delete_created_playlist.py`: Clean up your auto-generated playlists in one click. ⚠️ This deletes **ANY** playlists with `[AUTO]` in their description.
 
 ---
 
@@ -102,18 +89,30 @@ pip install -r requirements.txt
 
 ```
 sporganized/
-├── main.py         # Main script
-├── .env.example            # Example env config
-├── .env                    # env config
-├── requirements.txt        # Python dependencies
-└── README.md               # This file
+├── main.py                  # Main script
+├── .env.example             # Example env config
+├── requirements.txt         # Python dependencies
+├── README.md                # Project documentation
+├── LICENSE                  # License file
+├── .gitignore               # Git ignore rules
+├── .github/
+│   └── workflows/
+│       └── pylint.yml       # CI to lint the code
+├── scripts/
+│   ├── delete_created_playlist.py   # Delete generated playlist
+│   ├── sort_by_genres.py            # Sort playlist by genre
+│   └── sort_by_mood.py              # Sort playlist by mood
+└── src/
+    ├── authenticate_spotify.py      # Spotify auth handling
+    ├── constants.py                 # Constants
+    ├── fetch_from_spotify.py        # Get liked tracks
+    └── genre_groups.py              # Genre grouping
 ```
 
 ---
 
 ## 💡 Ideas for Future
 
-- Organize by **mood** using audio features like valence/energy
 - Support tagging by **decade/year** or **country**
 - Web-based interface
 - Periodic auto-sync
@@ -122,11 +121,11 @@ sporganized/
 
 ## 🧑‍💻 Author
 
-Made with ❤️ by <a href="https://www.linkedin.com/in/valentin-guyon" target="_blank">**Valentin Guyon**</a>.  
+Made with ❤️ by <a href="https://www.linkedin.com/in/valentin-guyon">**Valentin Guyon**</a>.  
 Feel free to fork, contribute or suggest features.
 
 ---
 
 ## 📜 License
 
-<a href="./LICENSE" target="_blank">`MIT License`</a>
+This project is licensed under the <a href="./LICENSE">MIT License</a>.
