@@ -26,10 +26,8 @@ jobs:
       - name: Run pylint and capture score
         id: pylint
         run: |
-          PYTHONPATH=. pylint scripts/ src/ || true
-          grep "Your code has been rated at" pylint.log
+          PYTHONPATH=. pylint scripts/ src/ | tee pylint.log || true
           SCORE_LINE=$(grep "Your code has been rated at" pylint.log)
-          echo "Pylint score line: $SCORE_LINE"
           SCORE=$(echo "$SCORE_LINE" | sed -n 's/.*rated at \([0-9.]*\)\/10.*/\1/p')
           echo "Extracted score: $SCORE"
           echo "score=$SCORE" >> $GITHUB_OUTPUT
